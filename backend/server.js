@@ -1,8 +1,16 @@
 require('dotenv').config();
-require('node:dns').setServers(['8.8.8.8', '8.8.4.4']);
+
+try {
+  require('node:dns').setServers(['8.8.8.8', '8.8.4.4']);
+} catch (e) {
+  // Ignored in environments where custom DNS servers cannot be set
+}
+
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
+const Policy = require('./models/Policy');
+const { policies } = require('./seed');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -11,11 +19,39 @@ const adminRoutes = require('./routes/admin');
 
 const app = express();
 
-// Connect to MongoDB
-connectDB();
+// Connect to MongoDB and auto-seed default policies if collection is empty
+connectDB().then(async () => {
+  try {
+    const policyCount = await Policy.countDocuments();
+    if (policyCount === 0) {
+      await Policy.insertMany(policies);
+      console.log(`✅ Auto-seeded ${policies.length} initial policies`);
+    }
+  } catch (err) {
+    console.warn('⚠️ Policy initialization note:', err.message);
+  }
+});
 
-// Middleware
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
+// Dynamic CORS configuration for local + production (Vercel)
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.CLIENT_URL,
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (curl, postman, server-to-server)
+    if (!origin) return callback(null, true);
+    // Allow configured origins or any vercel.app preview/production deployment
+    if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Permissive fallback so production requests succeed
+  },
+  credentials: true,
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

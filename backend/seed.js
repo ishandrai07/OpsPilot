@@ -119,4 +119,8 @@ const seedPolicies = async () => {
   }
 };
 
-seedPolicies();
+if (require.main === module) {
+  seedPolicies();
+}
+
+module.exports = { policies, seedPolicies };
